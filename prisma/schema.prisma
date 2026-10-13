@@ -1,0 +1,267 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  AGENT
+  ADMIN
+}
+
+enum TransactionType {
+  SALE
+  RENT
+}
+
+enum PropertyType {
+  HOUSE      // Nhà phố / nhà riêng
+  APARTMENT  // Căn hộ chung cư
+  LAND       // Đất nền
+  VILLA      // Biệt thự
+  SHOPHOUSE  // Nhà mặt tiền kinh doanh
+  OFFICE     // Văn phòng / mặt bằng
+  WAREHOUSE  // Kho xưởng
+}
+
+enum LegalStatus {
+  PINK_BOOK      // Sổ hồng / sổ đỏ
+  SALE_CONTRACT  // Hợp đồng mua bán
+  PENDING        // Đang chờ sổ
+  OTHER
+}
+
+enum ListingStatus {
+  DRAFT
+  ACTIVE
+  HIDDEN
+  SOLD
+  EXPIRED
+}
+
+enum ProjectStatus {
+  PLANNING
+  UNDER_CONSTRUCTION
+  HANDED_OVER
+}
+
+enum InfraType {
+  METRO
+  EXPRESSWAY
+  RING_ROAD
+  BRIDGE
+  MALL
+  HOSPITAL
+  SCHOOL
+  PARK
+  INDUSTRIAL
+}
+
+enum InfraStatus {
+  PLANNED
+  UNDER_CONSTRUCTION
+  COMPLETED
+}
+
+enum Plan {
+  FREE
+  SILVER
+  GOLD
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  name         String
+  phone        String?
+  role         Role      @default(USER)
+  plan         Plan      @default(FREE)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  listings     Listing[]
+  saved        SavedListing[]
+  inquiries    Inquiry[]
+}
+
+model Province {
+  id        String     @id @default(cuid())
+  slug      String     @unique
+  name      String
+  lat       Float
+  lng       Float
+  /// Giá trung bình tham chiếu (triệu VND / m²) dùng để so sánh giá tin đăng
+  avgPricePerM2 Float
+  districts District[]
+  listings  Listing[]
+  projects  Project[]
+  infrastructure Infrastructure[]
+}
+
+model District {
+  id         String    @id @default(cuid())
+  slug       String
+  name       String
+  provinceId String
+  province   Province  @relation(fields: [provinceId], references: [id], onDelete: Cascade)
+  lat        Float
+  lng        Float
+  avgPricePerM2 Float
+  listings   Listing[]
+  projects   Project[]
+  infrastructure Infrastructure[]
+
+  @@unique([provinceId, slug])
+}
+
+model Listing {
+  id              String          @id @default(cuid())
+  slug            String          @unique
+  title           String
+  description     String
+  transaction     TransactionType
+  propertyType    PropertyType
+  status          ListingStatus   @default(ACTIVE)
+  /// Giá bán (VND) hoặc giá thuê theo tháng (VND)
+  price           BigInt
+  area            Float
+  bedrooms        Int?
+  bathrooms       Int?
+  floors          Int?
+  frontage        Float?
+  roadWidth       Float?
+  legal           LegalStatus     @default(OTHER)
+  furnished       Boolean         @default(false)
+  carAccess       Boolean         @default(false)
+  floodRisk       Boolean         @default(false)
+  address         String
+  lat             Float
+  lng             Float
+  provinceId      String
+  province        Province        @relation(fields: [provinceId], references: [id])
+  districtId      String
+  district        District        @relation(fields: [districtId], references: [id])
+  projectId       String?
+  project         Project?        @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  ownerId         String
+  owner           User            @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  contactName     String
+  contactPhone    String
+  /// GoldScore 0–10, tính lại mỗi khi tin được tạo / sửa
+  score           Float           @default(0)
+  scoreBreakdown  Json?
+  featured        Boolean         @default(false)
+  views           Int             @default(0)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  images          ListingImage[]
+  savedBy         SavedListing[]
+  inquiries       Inquiry[]
+
+  @@index([status, transaction, propertyType])
+  @@index([provinceId, districtId])
+  @@index([score])
+  @@index([createdAt])
+}
+
+model ListingImage {
+  id        String  @id @default(cuid())
+  url       String
+  position  Int     @default(0)
+  listingId String
+  listing   Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+}
+
+model SavedListing {
+  userId    String
+  listingId String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  listing   Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@id([userId, listingId])
+}
+
+model Inquiry {
+  id        String   @id @default(cuid())
+  listingId String
+  listing   Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  name      String
+  phone     String
+  message   String
+  createdAt DateTime @default(now())
+}
+
+model Developer {
+  id          String    @id @default(cuid())
+  slug        String    @unique
+  name        String
+  description String
+  founded     Int?
+  website     String?
+  projects    Project[]
+}
+
+model Project {
+  id          String        @id @default(cuid())
+  slug        String        @unique
+  name        String
+  description String
+  status      ProjectStatus
+  legal       LegalStatus
+  totalUnits  Int?
+  areaHa      Float?
+  priceFrom   BigInt?
+  priceTo     BigInt?
+  completion  Int?
+  coverUrl    String
+  address     String
+  lat         Float
+  lng         Float
+  score       Float         @default(0)
+  amenities   String[]
+  developerId String
+  developer   Developer     @relation(fields: [developerId], references: [id])
+  provinceId  String
+  province    Province      @relation(fields: [provinceId], references: [id])
+  districtId  String
+  district    District      @relation(fields: [districtId], references: [id])
+  listings    Listing[]
+  featured    Boolean       @default(false)
+  createdAt   DateTime      @default(now())
+}
+
+model Infrastructure {
+  id          String      @id @default(cuid())
+  slug        String      @unique
+  name        String
+  type        InfraType
+  status      InfraStatus
+  description String
+  expectedYear Int?
+  lat         Float
+  lng         Float
+  /// Bán kính ảnh hưởng (km)
+  radiusKm    Float       @default(3)
+  provinceId  String
+  province    Province    @relation(fields: [provinceId], references: [id])
+  districtId  String?
+  district    District?   @relation(fields: [districtId], references: [id])
+}
+
+model Article {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  title       String
+  excerpt     String
+  content     String
+  coverUrl    String
+  category    String
+  publishedAt DateTime @default(now())
+}
